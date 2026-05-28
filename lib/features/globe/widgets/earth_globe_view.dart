@@ -1,0 +1,289 @@
+import 'package:flutter/material.dart';
+import 'package:three_js/three_js.dart' as three;
+
+import '../../../shared/theme/app_colors.dart';
+import '../../home/widgets/mountain_marker_overlay.dart';
+import '../../mountain/models/mountain.dart';
+import '../../mountain/utils/geo_to_globe_position.dart';
+import '../controllers/globe_interaction_rules.dart';
+import '../models/globe_marker_layout.dart';
+
+class EarthGlobeView extends StatefulWidget {
+  const EarthGlobeView({
+    super.key,
+    required this.mountains,
+    this.assetBasePath = 'assets/models/',
+    this.assetName = 'earth.glb',
+  });
+
+  final List<Mountain> mountains;
+  final String assetBasePath;
+  final String assetName;
+
+  @override
+  State<EarthGlobeView> createState() => _EarthGlobeViewState();
+}
+
+class _EarthGlobeViewState extends State<EarthGlobeView> {
+  static const _globeRadius = 1.0;
+  static const _markerLift = 0.035;
+  static const _dragThreshold = 8.0;
+
+  late final three.ThreeJS _threeJs;
+  three.PerspectiveCamera? _camera;
+  three.OrbitControls? _controls;
+  Size _viewportSize = Size.zero;
+  Offset? _pointerStart;
+  bool _isReady = false;
+  bool _autoRotateStopped = false;
+  List<GlobeMarkerLayout> _markerLayouts = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _threeJs = three.ThreeJS(
+      onSetupComplete: () {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _isReady = true;
+          _markerLayouts = _projectMarkerLayouts();
+        });
+      },
+      windowResizeUpdate: _handleWindowResize,
+      setup: _setupScene,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controls?.dispose();
+    _threeJs.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _viewportSize = Size(
+          constraints.maxWidth,
+          constraints.maxHeight,
+        );
+
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) {
+                      _pointerStart = event.localPosition;
+                    },
+                    onPointerMove: (event) {
+                      final pointerStart = _pointerStart;
+                      if (pointerStart == null) {
+                        return;
+                      }
+                      if ((event.localPosition - pointerStart).distance >=
+                          _dragThreshold) {
+                        _stopAutoRotate();
+                      }
+                    },
+                    onPointerUp: (_) {
+                      _pointerStart = null;
+                    },
+                    onPointerCancel: (_) {
+                      _pointerStart = null;
+                    },
+                    child: _threeJs.build(),
+                  ),
+                ),
+                if (!_isReady)
+                  const Positioned.fill(
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                Positioned.fill(
+                  child: MountainMarkerOverlay(markers: _markerLayouts),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _handleWindowResize(Size newSize) {
+    _viewportSize = newSize;
+    _syncCameraAspect();
+  }
+
+  void _syncCameraAspect() {
+    final camera = _camera;
+    if (camera == null ||
+        _viewportSize.width <= 0 ||
+        _viewportSize.height <= 0) {
+      return;
+    }
+
+    camera.aspect = _viewportSize.width / _viewportSize.height;
+    camera.updateProjectionMatrix();
+  }
+
+  Future<void> _setupScene() async {
+    final initialAspect = _threeJs.height > 0
+        ? _threeJs.width / _threeJs.height
+        : 1.0;
+
+    _camera = three.PerspectiveCamera(
+      45,
+      initialAspect,
+      0.1,
+      100,
+    );
+    _camera!.position.setValues(
+      0,
+      0,
+      GlobeInteractionRules.baseCameraDistance,
+    );
+
+    _threeJs.camera = _camera!;
+    _threeJs.scene = three.Scene();
+    _threeJs.scene.add(three.AmbientLight(0xffffff, 0.8));
+    final keyLight = three.DirectionalLight(0xffffff, 1.4);
+    keyLight.position.setValues(2.5, 2.0, 3.5);
+    _threeJs.scene.add(keyLight);
+    _threeJs.camera.lookAt(_threeJs.scene.position);
+
+    final loader = three.GLTFLoader(flipY: true).setPath(widget.assetBasePath);
+    final earth = await loader.fromAsset(widget.assetName);
+    if (earth == null) {
+      throw StateError('地球模型加载失败');
+    }
+    _threeJs.scene.add(earth.scene);
+
+    _replaceMountainMarkers();
+    _controls = three.OrbitControls(_threeJs.camera, _threeJs.globalKey)
+      ..enablePan = false
+      ..enableRotate = true
+      ..enableZoom = true
+      ..enableDamping = true
+      ..dampingFactor = 0.08
+      ..minDistance = GlobeInteractionRules.minCameraDistance
+      ..maxDistance = GlobeInteractionRules.maxCameraDistance
+      ..autoRotate = GlobeInteractionRules.autoRotateOnEnter
+      ..autoRotateSpeed = GlobeInteractionRules.autoRotateSpeed;
+
+    _threeJs.addAnimationEvent((_) {
+      _controls?.update();
+      final nextLayouts = _projectMarkerLayouts();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _markerLayouts = nextLayouts;
+      });
+    });
+  }
+
+  void _replaceMountainMarkers() {
+    final markerMaterial = three.MeshBasicMaterial.fromMap({
+      'color': 0x324e58,
+    });
+
+    for (final mountain in widget.mountains) {
+      final globePosition = geoToGlobePosition(
+        latitude: mountain.latitude,
+        longitude: mountain.longitude,
+        radius: _globeRadius + _markerLift,
+      );
+      final marker = three.Mesh(
+        three.SphereGeometry(0.025, 12, 8),
+        markerMaterial,
+      );
+      marker.name = 'mountain-marker-${mountain.name}';
+      marker.position.setValues(
+        globePosition.x,
+        globePosition.y,
+        globePosition.z,
+      );
+      _threeJs.scene.add(marker);
+    }
+  }
+
+  List<GlobeMarkerLayout> _projectMarkerLayouts() {
+    final camera = _camera;
+    if (camera == null || _viewportSize == Size.zero) {
+      return const [];
+    }
+
+    _syncCameraAspect();
+    camera.updateMatrixWorld(true);
+
+    final cameraPosition = GlobePosition(
+      camera.position.x,
+      camera.position.y,
+      camera.position.z,
+    );
+
+    return [
+      for (final mountain in widget.mountains)
+        _projectMountain(mountain, camera, cameraPosition),
+    ];
+  }
+
+  GlobeMarkerLayout _projectMountain(
+    Mountain mountain,
+    three.Camera camera,
+    GlobePosition cameraPosition,
+  ) {
+    final globePosition = geoToGlobePosition(
+      latitude: mountain.latitude,
+      longitude: mountain.longitude,
+      radius: _globeRadius + _markerLift,
+    );
+    final visible = isFrontFacing(
+      globePosition,
+      cameraPosition: cameraPosition,
+    );
+
+    if (!visible) {
+      return GlobeMarkerLayout(
+        mountain: mountain,
+        offset: Offset.zero,
+        visible: false,
+      );
+    }
+
+    final projected = three.Vector3(
+      globePosition.x,
+      globePosition.y,
+      globePosition.z,
+    ).project(camera);
+
+    return GlobeMarkerLayout(
+      mountain: mountain,
+      offset: Offset(
+        (projected.x + 1) * 0.5 * _viewportSize.width,
+        (1 - projected.y) * 0.5 * _viewportSize.height,
+      ),
+      visible: projected.z >= -1 && projected.z <= 1,
+    );
+  }
+
+  void _stopAutoRotate() {
+    if (_autoRotateStopped) {
+      return;
+    }
+    _autoRotateStopped = true;
+    _controls?.autoRotate = false;
+  }
+}
