@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/theme/app_spacing.dart';
 import '../providers/home_globe_view_provider.dart';
+import '../providers/home_mountains_provider.dart';
 import '../providers/selected_mountain_provider.dart';
 import '../widgets/mountain_detail_sheet.dart';
 
@@ -14,6 +15,7 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final selectedMountain = ref.watch(selectedMountainProvider);
+    final mountains = ref.watch(homeMountainsProvider);
     final globeBuilder = ref.watch(homeGlobeViewProvider);
 
     return SafeArea(
@@ -40,15 +42,18 @@ class HomePage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
                 Expanded(
-                  child: globeBuilder(
-                    onMountainSelected: (mountain) {
-                      ref.read(selectedMountainProvider.notifier).state =
-                          mountain;
-                    },
-                    onBackgroundTap: () {
-                      ref.read(selectedMountainProvider.notifier).state = null;
-                    },
-                  ),
+                  child: mountains.isEmpty
+                      ? const _HomeGlobeEmptyState()
+                      : globeBuilder(
+                          onMountainSelected: (mountain) {
+                            ref.read(selectedMountainProvider.notifier).state =
+                                mountain;
+                          },
+                          onBackgroundTap: () {
+                            ref.read(selectedMountainProvider.notifier).state =
+                                null;
+                          },
+                        ),
                 ),
               ],
             ),
@@ -60,6 +65,31 @@ class HomePage extends ConsumerWidget {
                 child: MountainDetailSheet(mountain: selectedMountain),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeGlobeEmptyState extends StatelessWidget {
+  const _HomeGlobeEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return DecoratedBox(
+      key: const ValueKey('home-globe-empty-state'),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: Text(
+          '暂无可展示山峰',
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: AppColors.onSurfaceVariant,
+          ),
         ),
       ),
     );

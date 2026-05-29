@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:three_js/three_js.dart' as three;
 
 import '../../../shared/theme/app_colors.dart';
@@ -19,11 +20,17 @@ class EarthGlobeView extends StatefulWidget {
     this.assetName = 'earth.glb',
   });
 
+  static const earthModelFailureMessage = '地球模型加载失败';
+  static const initializationFailureMessage = '3D 地球初始化失败';
+
   final List<Mountain> mountains;
   final ValueChanged<Mountain>? onMountainSelected;
   final VoidCallback? onBackgroundTap;
   final String assetBasePath;
   final String assetName;
+
+  @visibleForTesting
+  static Future<void> Function()? debugSceneSetupHook;
 
   @override
   State<EarthGlobeView> createState() => _EarthGlobeViewState();
@@ -41,6 +48,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   Offset? _pointerStart;
   bool _didDrag = false;
   bool _isReady = false;
+  String? _failureMessage;
   bool _autoRotateStopped = false;
   List<GlobeMarkerLayout> _markerLayouts = const [];
 
@@ -50,6 +58,9 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
     _threeJs = three.ThreeJS(
       onSetupComplete: () {
         if (!mounted) {
+          return;
+        }
+        if (_failureMessage != null) {
           return;
         }
         setState(() {
@@ -77,6 +88,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
           constraints.maxWidth,
           constraints.maxHeight,
         );
+        final failureMessage = _failureMessage;
 
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -88,44 +100,52 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: (event) {
-                      _pointerStart = event.localPosition;
-                      _didDrag = false;
-                    },
-                    onPointerMove: (event) {
-                      final pointerStart = _pointerStart;
-                      if (pointerStart == null) {
-                        return;
-                      }
-                      if ((event.localPosition - pointerStart).distance >=
-                          _dragThreshold) {
-                        _didDrag = true;
-                        _stopAutoRotate();
-                      }
-                    },
-                    onPointerUp: (event) {
-                      if (!_didDrag) {
-                        _handleTap(event.localPosition);
-                      }
-                      _pointerStart = null;
-                      _didDrag = false;
-                    },
-                    onPointerCancel: (_) {
-                      _pointerStart = null;
-                      _didDrag = false;
-                    },
-                    child: _threeJs.build(),
-                  ),
+                  child: failureMessage == null
+                      ? Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: (event) {
+                            _pointerStart = event.localPosition;
+                            _didDrag = false;
+                          },
+                          onPointerMove: (event) {
+                            final pointerStart = _pointerStart;
+                            if (pointerStart == null) {
+                              return;
+                            }
+                            if ((event.localPosition - pointerStart)
+                                    .distance >=
+                                _dragThreshold) {
+                              _didDrag = true;
+                              _stopAutoRotate();
+                            }
+                          },
+                          onPointerUp: (event) {
+                            if (!_didDrag) {
+                              _handleTap(event.localPosition);
+                            }
+                            _pointerStart = null;
+                            _didDrag = false;
+                          },
+                          onPointerCancel: (_) {
+                            _pointerStart = null;
+                            _didDrag = false;
+                          },
+                          child: _threeJs.build(),
+                        )
+                      : const SizedBox.expand(),
                 ),
-                if (!_isReady)
+                if (failureMessage != null)
+                  Positioned.fill(
+                    child: _GlobeFailureState(message: failureMessage),
+                  )
+                else if (!_isReady)
                   const Positioned.fill(
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                Positioned.fill(
-                  child: MountainMarkerOverlay(markers: _markerLayouts),
-                ),
+                if (failureMessage == null)
+                  Positioned.fill(
+                    child: MountainMarkerOverlay(markers: _markerLayouts),
+                  ),
               ],
             ),
           ),
@@ -152,59 +172,83 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   }
 
   Future<void> _setupScene() async {
-    final initialAspect = _threeJs.height > 0
-        ? _threeJs.width / _threeJs.height
-        : 1.0;
-
-    _camera = three.PerspectiveCamera(
-      45,
-      initialAspect,
-      0.1,
-      100,
-    );
-    _camera!.position.setValues(
-      0,
-      0,
-      GlobeInteractionRules.baseCameraDistance,
-    );
-
-    _threeJs.camera = _camera!;
-    _threeJs.scene = three.Scene();
-    _threeJs.scene.add(three.AmbientLight(0xffffff, 0.8));
-    final keyLight = three.DirectionalLight(0xffffff, 1.4);
-    keyLight.position.setValues(2.5, 2.0, 3.5);
-    _threeJs.scene.add(keyLight);
-    _threeJs.camera.lookAt(_threeJs.scene.position);
-
-    final loader = three.GLTFLoader(flipY: true).setPath(widget.assetBasePath);
-    final earth = await loader.fromAsset(widget.assetName);
-    if (earth == null) {
-      throw StateError('地球模型加载失败');
-    }
-    _threeJs.scene.add(earth.scene);
-
-    _replaceMountainMarkers();
-    _controls = three.OrbitControls(_threeJs.camera, _threeJs.globalKey)
-      ..enablePan = false
-      ..enableRotate = true
-      ..enableZoom = true
-      ..enableDamping = true
-      ..dampingFactor = 0.08
-      ..minDistance = GlobeInteractionRules.minCameraDistance
-      ..maxDistance = GlobeInteractionRules.maxCameraDistance
-      ..autoRotate = GlobeInteractionRules.autoRotateOnEnter
-      ..autoRotateSpeed = GlobeInteractionRules.autoRotateSpeed;
-
-    _threeJs.addAnimationEvent((_) {
-      _controls?.update();
-      final nextLayouts = _projectMarkerLayouts();
-      if (!mounted) {
+    try {
+      final debugSceneSetupHook = EarthGlobeView.debugSceneSetupHook;
+      if (debugSceneSetupHook != null) {
+        await debugSceneSetupHook();
         return;
       }
-      setState(() {
-        _markerLayouts = nextLayouts;
+
+      final initialAspect = _threeJs.height > 0
+          ? _threeJs.width / _threeJs.height
+          : 1.0;
+
+      _camera = three.PerspectiveCamera(
+        45,
+        initialAspect,
+        0.1,
+        100,
+      );
+      _camera!.position.setValues(
+        0,
+        0,
+        GlobeInteractionRules.baseCameraDistance,
+      );
+
+      _threeJs.camera = _camera!;
+      _threeJs.scene = three.Scene();
+      _threeJs.scene.add(three.AmbientLight(0xffffff, 0.8));
+      final keyLight = three.DirectionalLight(0xffffff, 1.4);
+      keyLight.position.setValues(2.5, 2.0, 3.5);
+      _threeJs.scene.add(keyLight);
+      _threeJs.camera.lookAt(_threeJs.scene.position);
+
+      final loader = three.GLTFLoader(
+        flipY: true,
+      ).setPath(widget.assetBasePath);
+      final earth = await _loadEarthModel(loader);
+      if (earth == null) {
+        _showFailure(EarthGlobeView.earthModelFailureMessage);
+        return;
+      }
+      _threeJs.scene.add(earth.scene);
+
+      _replaceMountainMarkers();
+      _controls = three.OrbitControls(_threeJs.camera, _threeJs.globalKey)
+        ..enablePan = false
+        ..enableRotate = true
+        ..enableZoom = true
+        ..enableDamping = true
+        ..dampingFactor = 0.08
+        ..minDistance = GlobeInteractionRules.minCameraDistance
+        ..maxDistance = GlobeInteractionRules.maxCameraDistance
+        ..autoRotate = GlobeInteractionRules.autoRotateOnEnter
+        ..autoRotateSpeed = GlobeInteractionRules.autoRotateSpeed;
+
+      _threeJs.addAnimationEvent((_) {
+        if (_failureMessage != null) {
+          return;
+        }
+        _controls?.update();
+        final nextLayouts = _projectMarkerLayouts();
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _markerLayouts = nextLayouts;
+        });
       });
-    });
+    } catch (_) {
+      _showFailure(EarthGlobeView.initializationFailureMessage);
+    }
+  }
+
+  Future<three.GLTFData?> _loadEarthModel(three.GLTFLoader loader) async {
+    try {
+      return await loader.fromAsset(widget.assetName);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _replaceMountainMarkers() {
@@ -301,6 +345,10 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   }
 
   void _handleTap(Offset tapPosition) {
+    if (_failureMessage != null || !_isReady) {
+      return;
+    }
+
     final tappedMountain = hitTestVisibleMountain(
       markers: _markerLayouts,
       tapPosition: tapPosition,
@@ -311,5 +359,44 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
     }
 
     widget.onBackgroundTap?.call();
+  }
+
+  void _showFailure(String message) {
+    if (!mounted) {
+      return;
+    }
+    _controls?.dispose();
+    _controls = null;
+    setState(() {
+      _failureMessage = message;
+      _isReady = false;
+      _markerLayouts = const [];
+      _pointerStart = null;
+      _didDrag = false;
+    });
+  }
+}
+
+class _GlobeFailureState extends StatelessWidget {
+  const _GlobeFailureState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return ColoredBox(
+      color: AppColors.errorContainer,
+      child: Center(
+        child: Text(
+          message,
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: AppColors.onErrorContainer,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
   }
 }

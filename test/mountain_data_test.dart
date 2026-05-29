@@ -70,5 +70,13 @@ void main() {
       ),
       throwsRangeError,
     );
+    expect(
+      () => geoToGlobePosition(latitude: double.nan, longitude: 0),
+      throwsArgumentError,
+    );
+    expect(
+      () => geoToGlobePosition(latitude: 0, longitude: double.infinity),
+      throwsArgumentError,
+    );
   });
 }
