@@ -171,7 +171,7 @@ void main() {
     expect(globeBuilt, isFalse);
   });
 
-  testWidgets('earth model failure keeps shell navigation usable', (
+  testWidgets('earth texture failure keeps shell navigation usable', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -185,14 +185,14 @@ void main() {
                 mountains: MountainData.fixedMountains,
                 onMountainSelected: onMountainSelected,
                 onBackgroundTap: onBackgroundTap,
-                assetName: 'missing-earth.glb',
+                dayTextureName: 'missing-earth.jpg',
               );
             },
       ),
     );
-    await pumpUntilText(tester, '地球模型加载失败');
+    await pumpUntilText(tester, '地球贴图加载失败');
 
-    expect(find.text('地球模型加载失败'), findsOneWidget);
+    expect(find.text('地球贴图加载失败'), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
 
     await tester.tap(find.text('攀爬'));
@@ -220,16 +220,16 @@ void main() {
                 onBackgroundTap: () {
                   backgroundTapped = true;
                 },
-                assetName: 'missing-earth.glb',
+                dayTextureName: 'missing-earth.jpg',
               );
             },
       ),
     );
-    await pumpUntilText(tester, '地球模型加载失败');
+    await pumpUntilText(tester, '地球贴图加载失败');
 
-    expect(find.text('地球模型加载失败'), findsOneWidget);
+    expect(find.text('地球贴图加载失败'), findsOneWidget);
 
-    await tester.tap(find.text('地球模型加载失败'));
+    await tester.tap(find.text('地球贴图加载失败'));
     await tester.pump();
 
     expect(selected, isFalse);

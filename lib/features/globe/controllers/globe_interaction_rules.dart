@@ -7,5 +7,5 @@ class GlobeInteractionRules {
   static const minCameraDistance = baseCameraDistance / maxZoomScale;
   static const maxCameraDistance = baseCameraDistance / minZoomScale;
   static const autoRotateOnEnter = true;
-  static const autoRotateSpeed = 0.35;
+  static const autoRotateSpeed = 0.025;
 }

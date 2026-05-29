@@ -15,18 +15,23 @@ class EarthGlobeView extends StatefulWidget {
     required this.mountains,
     this.onMountainSelected,
     this.onBackgroundTap,
-    this.assetBasePath = 'assets/models/',
-    this.assetName = 'earth.glb',
+    this.textureBasePath = 'assets/textures/planets/',
+    this.dayTextureName = 'earth_day_4096.jpg',
+    this.nightTextureName = 'earth_night_4096.jpg',
+    this.bumpRoughnessCloudsTextureName =
+        'earth_bump_roughness_clouds_4096.jpg',
   });
 
-  static const earthModelFailureMessage = '地球模型加载失败';
+  static const earthTextureFailureMessage = '地球贴图加载失败';
   static const initializationFailureMessage = '3D 地球初始化失败';
 
   final List<Mountain> mountains;
   final ValueChanged<Mountain>? onMountainSelected;
   final VoidCallback? onBackgroundTap;
-  final String assetBasePath;
-  final String assetName;
+  final String textureBasePath;
+  final String dayTextureName;
+  final String nightTextureName;
+  final String bumpRoughnessCloudsTextureName;
 
   @visibleForTesting
   static Future<void> Function()? debugSceneSetupHook;
@@ -43,7 +48,8 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   three.ThreeJS? _threeJs;
   three.PerspectiveCamera? _camera;
   three.OrbitControls? _controls;
-  three.GLTFData? _preloadedEarth;
+  three.Mesh? _globe;
+  _EarthTextures? _earthTextures;
   Size _viewportSize = Size.zero;
   Offset? _pointerStart;
   bool _didDrag = false;
@@ -64,6 +70,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
     if (_threeJs?.mounted == true) {
       _threeJs!.dispose();
     }
+    _earthTextures?.dispose();
     super.dispose();
   }
 
@@ -76,7 +83,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
 
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLow,
+            color: Colors.black,
             borderRadius: BorderRadius.circular(8),
           ),
           child: ClipRRect(
@@ -86,38 +93,38 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
                 Positioned.fill(
                   child: failureMessage == null
                       ? _threeJs == null
-                          ? const SizedBox.expand()
-                          : Listener(
-                              behavior: HitTestBehavior.opaque,
-                              onPointerDown: (event) {
-                                _pointerStart = event.localPosition;
-                                _didDrag = false;
-                              },
-                              onPointerMove: (event) {
-                                final pointerStart = _pointerStart;
-                                if (pointerStart == null) {
-                                  return;
-                                }
-                                if ((event.localPosition - pointerStart)
-                                        .distance >=
-                                    _dragThreshold) {
-                                  _didDrag = true;
-                                  _stopAutoRotate();
-                                }
-                              },
-                              onPointerUp: (event) {
-                                if (!_didDrag) {
-                                  _handleTap(event.localPosition);
-                                }
-                                _pointerStart = null;
-                                _didDrag = false;
-                              },
-                              onPointerCancel: (_) {
-                                _pointerStart = null;
-                                _didDrag = false;
-                              },
-                              child: _threeJs!.build(),
-                            )
+                            ? const SizedBox.expand()
+                            : Listener(
+                                behavior: HitTestBehavior.opaque,
+                                onPointerDown: (event) {
+                                  _pointerStart = event.localPosition;
+                                  _didDrag = false;
+                                },
+                                onPointerMove: (event) {
+                                  final pointerStart = _pointerStart;
+                                  if (pointerStart == null) {
+                                    return;
+                                  }
+                                  if ((event.localPosition - pointerStart)
+                                          .distance >=
+                                      _dragThreshold) {
+                                    _didDrag = true;
+                                    _stopAutoRotate();
+                                  }
+                                },
+                                onPointerUp: (event) {
+                                  if (!_didDrag) {
+                                    _handleTap(event.localPosition);
+                                  }
+                                  _pointerStart = null;
+                                  _didDrag = false;
+                                },
+                                onPointerCancel: (_) {
+                                  _pointerStart = null;
+                                  _didDrag = false;
+                                },
+                                child: _threeJs!.build(),
+                              )
                       : const SizedBox.expand(),
                 ),
                 if (failureMessage != null)
@@ -160,7 +167,8 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   Future<void> _setupScene() async {
     try {
       final threeJs = _threeJs;
-      if (threeJs == null) {
+      final textures = _earthTextures;
+      if (threeJs == null || textures == null) {
         return;
       }
 
@@ -168,33 +176,26 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
           ? threeJs.width / threeJs.height
           : 1.0;
 
-      _camera = three.PerspectiveCamera(45, initialAspect, 0.1, 100);
-      _camera!.position.setValues(
-        0,
-        0,
-        GlobeInteractionRules.baseCameraDistance,
-      );
+      _camera = three.PerspectiveCamera(25, initialAspect, 0.1, 100);
+      _camera!.position.setValues(4.5, 2.0, 3.0);
 
       threeJs.camera = _camera!;
       threeJs.scene = three.Scene();
-      threeJs.scene.add(three.AmbientLight(0xffffff, 0.8));
-      final keyLight = three.DirectionalLight(0xffffff, 1.4);
-      keyLight.position.setValues(2.5, 2.0, 3.5);
-      threeJs.scene.add(keyLight);
+      threeJs.scene.background = three.Color.fromHex32(0x000000);
       threeJs.camera.lookAt(threeJs.scene.position);
 
-      final loader = three.GLTFLoader(
-        flipY: true,
-      ).setPath(widget.assetBasePath);
-      final earth = _preloadedEarth ?? await _loadEarthModel(loader);
-      _preloadedEarth = null;
-      if (earth == null) {
-        _showFailure(EarthGlobeView.earthModelFailureMessage);
-        return;
-      }
-      threeJs.scene.add(earth.scene);
+      final sphereGeometry = three.SphereGeometry(_globeRadius, 64, 64);
+      final globe = three.Mesh(sphereGeometry, _createGlobeMaterial(textures));
+      _globe = globe;
+      threeJs.scene.add(globe);
 
-      _replaceMountainMarkers();
+      final atmosphere = three.Mesh(
+        three.SphereGeometry(_globeRadius, 64, 64),
+        _createAtmosphereMaterial(),
+      );
+      atmosphere.scale.setScalar(1.04);
+      threeJs.scene.add(atmosphere);
+
       _controls = three.OrbitControls(threeJs.camera, threeJs.globalKey)
         ..enablePan = false
         ..enableRotate = true
@@ -203,12 +204,14 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
         ..dampingFactor = 0.08
         ..minDistance = GlobeInteractionRules.minCameraDistance
         ..maxDistance = GlobeInteractionRules.maxCameraDistance
-        ..autoRotate = GlobeInteractionRules.autoRotateOnEnter
-        ..autoRotateSpeed = GlobeInteractionRules.autoRotateSpeed;
+        ..autoRotate = false;
 
-      threeJs.addAnimationEvent((_) {
+      threeJs.addAnimationEvent((dt) {
         if (_failureMessage != null) {
           return;
+        }
+        if (!_autoRotateStopped && GlobeInteractionRules.autoRotateOnEnter) {
+          _globe?.rotation.y += dt * GlobeInteractionRules.autoRotateSpeed;
         }
         _controls?.update();
         final nextLayouts = _projectMarkerLayouts();
@@ -230,76 +233,104 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
       if (debugSceneSetupHook != null) {
         await debugSceneSetupHook();
       }
-
-      final loader = three.GLTFLoader(
-        flipY: true,
-      ).setPath(widget.assetBasePath);
-      _preloadedEarth = await _loadEarthModel(loader);
-      if (!mounted) {
-        return;
-      }
-      if (_preloadedEarth == null) {
-        _showFailure(EarthGlobeView.earthModelFailureMessage);
-        return;
-      }
-
-      setState(() {
-        _threeJs = three.ThreeJS(
-          onSetupComplete: () {
-            if (!mounted) {
-              return;
-            }
-            if (_failureMessage != null) {
-              return;
-            }
-            setState(() {
-              _isReady = true;
-              _markerLayouts = _projectMarkerLayouts();
-            });
-          },
-          windowResizeUpdate: _handleWindowResize,
-          setup: _setupScene,
-        );
-      });
     } catch (_) {
       _showFailure(EarthGlobeView.initializationFailureMessage);
-    }
-  }
-
-  Future<three.GLTFData?> _loadEarthModel(three.GLTFLoader loader) async {
-    try {
-      return await loader.fromAsset(widget.assetName);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  void _replaceMountainMarkers() {
-    final threeJs = _threeJs;
-    if (threeJs == null) {
       return;
     }
 
-    final markerMaterial = three.MeshBasicMaterial.fromMap({'color': 0x324e58});
-
-    for (final mountain in widget.mountains) {
-      final globePosition = geoToGlobePosition(
-        latitude: mountain.latitude,
-        longitude: mountain.longitude,
-        radius: _globeRadius + _markerLift,
-      );
-      final marker = three.Mesh(
-        three.SphereGeometry(0.025, 12, 8),
-        markerMaterial,
-      );
-      marker.name = 'mountain-marker-${mountain.name}';
-      marker.position.setValues(
-        globePosition.x,
-        globePosition.y,
-        globePosition.z,
-      );
-      threeJs.scene.add(marker);
+    try {
+      _earthTextures = await _loadEarthTextures();
+    } catch (_) {
+      _showFailure(EarthGlobeView.earthTextureFailureMessage);
+      return;
     }
+
+    if (!mounted) {
+      _earthTextures?.dispose();
+      _earthTextures = null;
+      return;
+    }
+
+    setState(() {
+      _threeJs = three.ThreeJS(
+        settings: three.Settings(antialias: true, clearColor: 0x000000),
+        onSetupComplete: () {
+          if (!mounted) {
+            return;
+          }
+          if (_failureMessage != null) {
+            return;
+          }
+          setState(() {
+            _isReady = true;
+            _markerLayouts = _projectMarkerLayouts();
+          });
+        },
+        windowResizeUpdate: _handleWindowResize,
+        setup: _setupScene,
+      );
+    });
+  }
+
+  Future<_EarthTextures> _loadEarthTextures() async {
+    final loader = three.TextureLoader().setPath(widget.textureBasePath);
+    final dayTexture = await loader.fromAsset(widget.dayTextureName);
+    final nightTexture = await loader.fromAsset(widget.nightTextureName);
+    final bumpRoughnessCloudsTexture = await loader.fromAsset(
+      widget.bumpRoughnessCloudsTextureName,
+    );
+
+    if (dayTexture == null ||
+        nightTexture == null ||
+        bumpRoughnessCloudsTexture == null) {
+      throw StateError('Earth textures failed to load.');
+    }
+
+    dayTexture
+      ..colorSpace = three.SRGBColorSpace
+      ..anisotropy = 8;
+    nightTexture
+      ..colorSpace = three.SRGBColorSpace
+      ..anisotropy = 8;
+    bumpRoughnessCloudsTexture
+      ..colorSpace = three.NoColorSpace
+      ..anisotropy = 8;
+
+    return _EarthTextures(
+      day: dayTexture,
+      night: nightTexture,
+      bumpRoughnessClouds: bumpRoughnessCloudsTexture,
+    );
+  }
+
+  three.ShaderMaterial _createGlobeMaterial(_EarthTextures textures) {
+    return three.ShaderMaterial.fromMap({
+      'uniforms': {
+        'dayTexture': {'value': textures.day},
+        'nightTexture': {'value': textures.night},
+        'bumpRoughnessCloudsTexture': {'value': textures.bumpRoughnessClouds},
+        'sunDirection': {'value': three.Vector3(0, 0, 1)},
+        'atmosphereDayColor': {'value': three.Color.fromHex32(0x4db2ff)},
+        'atmosphereTwilightColor': {'value': three.Color.fromHex32(0xbc490b)},
+      },
+      'vertexShader': _globeVertexShader,
+      'fragmentShader': _globeFragmentShader,
+    });
+  }
+
+  three.ShaderMaterial _createAtmosphereMaterial() {
+    return three.ShaderMaterial.fromMap({
+      'uniforms': {
+        'sunDirection': {'value': three.Vector3(0, 0, 1)},
+        'atmosphereDayColor': {'value': three.Color.fromHex32(0x4db2ff)},
+        'atmosphereTwilightColor': {'value': three.Color.fromHex32(0xbc490b)},
+      },
+      'vertexShader': _atmosphereVertexShader,
+      'fragmentShader': _atmosphereFragmentShader,
+      'transparent': true,
+      'side': three.BackSide,
+      'depthWrite': false,
+    });
   }
 
   List<GlobeMarkerLayout> _projectMarkerLayouts() {
@@ -310,11 +341,15 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
 
     _syncCameraAspect();
     camera.updateMatrixWorld(true);
+    _globe?.updateMatrixWorld(true);
 
+    final cameraWorldPosition = three.Vector3().setFromMatrixPosition(
+      camera.matrixWorld,
+    );
     final cameraPosition = GlobePosition(
-      camera.position.x,
-      camera.position.y,
-      camera.position.z,
+      cameraWorldPosition.x,
+      cameraWorldPosition.y,
+      cameraWorldPosition.z,
     );
 
     return [
@@ -328,10 +363,26 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
     three.Camera camera,
     GlobePosition cameraPosition,
   ) {
-    final globePosition = geoToGlobePosition(
+    final localPosition = geoToGlobePosition(
       latitude: mountain.latitude,
       longitude: mountain.longitude,
       radius: _globeRadius + _markerLift,
+    );
+    final worldPosition = _globe?.localToWorld(
+      three.Vector3(localPosition.x, localPosition.y, localPosition.z),
+    );
+    if (worldPosition == null) {
+      return GlobeMarkerLayout(
+        mountain: mountain,
+        offset: Offset.zero,
+        visible: false,
+      );
+    }
+
+    final globePosition = GlobePosition(
+      worldPosition.x,
+      worldPosition.y,
+      worldPosition.z,
     );
     final visible = isFrontFacing(
       globePosition,
@@ -346,11 +397,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
       );
     }
 
-    final projected = three.Vector3(
-      globePosition.x,
-      globePosition.y,
-      globePosition.z,
-    ).project(camera);
+    final projected = worldPosition.project(camera);
 
     return GlobeMarkerLayout(
       mountain: mountain,
@@ -402,6 +449,119 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
     });
   }
 }
+
+class _EarthTextures {
+  const _EarthTextures({
+    required this.day,
+    required this.night,
+    required this.bumpRoughnessClouds,
+  });
+
+  final three.Texture day;
+  final three.Texture night;
+  final three.Texture bumpRoughnessClouds;
+
+  void dispose() {
+    day.dispose();
+    night.dispose();
+    bumpRoughnessClouds.dispose();
+  }
+}
+
+const _globeVertexShader = '''
+varying vec2 vUv;
+varying vec3 vNormalWorld;
+varying vec3 vWorldPosition;
+
+void main() {
+  vUv = uv;
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = worldPosition.xyz;
+  vNormalWorld = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+''';
+
+const _globeFragmentShader = '''
+uniform sampler2D dayTexture;
+uniform sampler2D nightTexture;
+uniform sampler2D bumpRoughnessCloudsTexture;
+uniform vec3 sunDirection;
+uniform vec3 atmosphereDayColor;
+uniform vec3 atmosphereTwilightColor;
+
+varying vec2 vUv;
+varying vec3 vNormalWorld;
+varying vec3 vWorldPosition;
+
+void main() {
+  vec3 normalWorld = normalize(vNormalWorld);
+  float sunOrientation = dot(normalWorld, normalize(sunDirection));
+
+  vec3 dayColor = texture2D(dayTexture, vUv).rgb;
+  vec3 nightColor = texture2D(nightTexture, vUv).rgb;
+  vec3 bumpRoughnessClouds = texture2D(bumpRoughnessCloudsTexture, vUv).rgb;
+
+  float cloudsStrength = smoothstep(0.2, 1.0, bumpRoughnessClouds.b);
+  vec3 sunlitColor = mix(dayColor, vec3(1.0), clamp(cloudsStrength * 2.0, 0.0, 1.0));
+  float dayStrength = smoothstep(-0.25, 0.5, sunOrientation);
+
+  vec3 viewDirection = normalize(vWorldPosition - cameraPosition);
+  float fresnel = 1.0 - abs(dot(viewDirection, normalWorld));
+  vec3 atmosphereColor = mix(
+    atmosphereTwilightColor,
+    atmosphereDayColor,
+    smoothstep(-0.25, 0.75, sunOrientation)
+  );
+  float atmosphereMix = clamp(
+    smoothstep(-0.5, 1.0, sunOrientation) * pow(fresnel, 2.0),
+    0.0,
+    1.0
+  );
+
+  vec3 finalColor = mix(nightColor, sunlitColor, dayStrength);
+  finalColor = mix(finalColor, atmosphereColor, atmosphereMix);
+
+  gl_FragColor = vec4(finalColor, 1.0);
+}
+''';
+
+const _atmosphereVertexShader = '''
+varying vec3 vNormalWorld;
+varying vec3 vWorldPosition;
+
+void main() {
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = worldPosition.xyz;
+  vNormalWorld = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+''';
+
+const _atmosphereFragmentShader = '''
+uniform vec3 sunDirection;
+uniform vec3 atmosphereDayColor;
+uniform vec3 atmosphereTwilightColor;
+
+varying vec3 vNormalWorld;
+varying vec3 vWorldPosition;
+
+void main() {
+  vec3 normalWorld = normalize(vNormalWorld);
+  float sunOrientation = dot(normalWorld, normalize(sunDirection));
+  vec3 viewDirection = normalize(vWorldPosition - cameraPosition);
+  float fresnel = 1.0 - abs(dot(viewDirection, normalWorld));
+
+  vec3 atmosphereColor = mix(
+    atmosphereTwilightColor,
+    atmosphereDayColor,
+    smoothstep(-0.25, 0.75, sunOrientation)
+  );
+  float alpha = pow(fresnel, 3.0) * smoothstep(-0.5, 1.0, sunOrientation) * 0.85;
+
+  gl_FragColor = vec4(atmosphereColor, alpha);
+}
+''';
 
 class _GlobeFailureState extends StatelessWidget {
   const _GlobeFailureState({required this.message});

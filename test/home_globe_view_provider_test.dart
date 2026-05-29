@@ -19,7 +19,13 @@ void main() {
     expect(globeView, isA<EarthGlobeView>());
     final earthGlobeView = globeView as EarthGlobeView;
     expect(earthGlobeView.mountains, MountainData.fixedMountains);
-    expect(earthGlobeView.assetName, 'earth.glb');
+    expect(earthGlobeView.textureBasePath, 'assets/textures/planets/');
+    expect(earthGlobeView.dayTextureName, 'earth_day_4096.jpg');
+    expect(earthGlobeView.nightTextureName, 'earth_night_4096.jpg');
+    expect(
+      earthGlobeView.bumpRoughnessCloudsTextureName,
+      'earth_bump_roughness_clouds_4096.jpg',
+    );
   });
 
   test('home globe provider uses the current home mountain data source', () {
