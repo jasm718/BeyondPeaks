@@ -13,6 +13,10 @@ dependencies:
   go_router: ^17.2.3
   three_js: ^0.2.7
 
+dependency_overrides:
+  flutter_angle:
+    path: third_party/flutter_angle
+
 dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:

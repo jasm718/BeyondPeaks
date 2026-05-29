@@ -69,3 +69,6 @@ app.*.map.json
 *.ipa
 *.app
 *.app.dSYM
+
+
+third_party
