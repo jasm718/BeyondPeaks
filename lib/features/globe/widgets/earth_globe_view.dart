@@ -7,16 +7,21 @@ import '../../mountain/models/mountain.dart';
 import '../../mountain/utils/geo_to_globe_position.dart';
 import '../controllers/globe_interaction_rules.dart';
 import '../models/globe_marker_layout.dart';
+import '../utils/globe_marker_hit_test.dart';
 
 class EarthGlobeView extends StatefulWidget {
   const EarthGlobeView({
     super.key,
     required this.mountains,
+    this.onMountainSelected,
+    this.onBackgroundTap,
     this.assetBasePath = 'assets/models/',
     this.assetName = 'earth.glb',
   });
 
   final List<Mountain> mountains;
+  final ValueChanged<Mountain>? onMountainSelected;
+  final VoidCallback? onBackgroundTap;
   final String assetBasePath;
   final String assetName;
 
@@ -34,6 +39,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   three.OrbitControls? _controls;
   Size _viewportSize = Size.zero;
   Offset? _pointerStart;
+  bool _didDrag = false;
   bool _isReady = false;
   bool _autoRotateStopped = false;
   List<GlobeMarkerLayout> _markerLayouts = const [];
@@ -86,6 +92,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
                     behavior: HitTestBehavior.opaque,
                     onPointerDown: (event) {
                       _pointerStart = event.localPosition;
+                      _didDrag = false;
                     },
                     onPointerMove: (event) {
                       final pointerStart = _pointerStart;
@@ -94,14 +101,20 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
                       }
                       if ((event.localPosition - pointerStart).distance >=
                           _dragThreshold) {
+                        _didDrag = true;
                         _stopAutoRotate();
                       }
                     },
-                    onPointerUp: (_) {
+                    onPointerUp: (event) {
+                      if (!_didDrag) {
+                        _handleTap(event.localPosition);
+                      }
                       _pointerStart = null;
+                      _didDrag = false;
                     },
                     onPointerCancel: (_) {
                       _pointerStart = null;
+                      _didDrag = false;
                     },
                     child: _threeJs.build(),
                   ),
@@ -285,5 +298,18 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
     }
     _autoRotateStopped = true;
     _controls?.autoRotate = false;
+  }
+
+  void _handleTap(Offset tapPosition) {
+    final tappedMountain = hitTestVisibleMountain(
+      markers: _markerLayouts,
+      tapPosition: tapPosition,
+    );
+    if (tappedMountain != null) {
+      widget.onMountainSelected?.call(tappedMountain);
+      return;
+    }
+
+    widget.onBackgroundTap?.call();
   }
 }

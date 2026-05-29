@@ -9,7 +9,10 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
-    final globeView = container.read(homeGlobeViewProvider);
+    final globeView = container.read(homeGlobeViewProvider)(
+      onMountainSelected: (_) {},
+      onBackgroundTap: () {},
+    );
 
     expect(globeView, isA<EarthGlobeView>());
     final earthGlobeView = globeView as EarthGlobeView;

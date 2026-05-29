@@ -1,17 +1,27 @@
 import 'package:beyond_peaks/app/app.dart';
 import 'package:beyond_peaks/features/home/providers/home_globe_view_provider.dart';
+import 'package:beyond_peaks/features/mountain/data/mountain_data.dart';
+import 'package:beyond_peaks/features/mountain/models/mountain.dart';
 import 'package:beyond_peaks/shared/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  late ValueChanged<Mountain> selectMountain;
+  late VoidCallback tapBackground;
+
   Widget buildApp() {
     return ProviderScope(
       overrides: [
-        homeGlobeViewProvider.overrideWithValue(
-          const SizedBox(key: ValueKey('home-globe-fake')),
-        ),
+        homeGlobeViewProvider.overrideWithValue(({
+          required ValueChanged<Mountain> onMountainSelected,
+          required VoidCallback onBackgroundTap,
+        }) {
+          selectMountain = onMountainSelected;
+          tapBackground = onBackgroundTap;
+          return const SizedBox(key: ValueKey('home-globe-fake'));
+        }),
       ],
       child: const BeyondPeaksApp(),
     );
@@ -38,6 +48,7 @@ void main() {
     expect(theme.colorScheme.primary, AppColors.primary);
     expect(theme.colorScheme.surface, AppColors.surface);
     expect(navBar.selectedIndex, 0);
+    expect(find.byKey(const ValueKey('mountain-detail-sheet')), findsNothing);
   });
 
   testWidgets('tapping each tab switches to the matching placeholder', (
@@ -60,5 +71,52 @@ void main() {
 
     final navBar = tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(navBar.selectedIndex, 3);
+  });
+
+  testWidgets('selecting a mountain opens and closes the detail sheet', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final mountain = MountainData.fixedMountains.first;
+    selectMountain(mountain);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('mountain-detail-sheet')), findsOneWidget);
+    expect(find.text(mountain.name), findsOneWidget);
+    expect(
+      find.text('${mountain.region} · ${mountain.elevationMeters}m'),
+      findsOneWidget,
+    );
+    expect(find.text(mountain.defaultRouteName), findsOneWidget);
+    expect(find.text(mountain.routeSummary), findsOneWidget);
+
+    tapBackground();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('mountain-detail-sheet')), findsNothing);
+  });
+
+  testWidgets('selected mountain returns when navigating back to home', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final mountain = MountainData.fixedMountains[1];
+    selectMountain(mountain);
+    await tester.pumpAndSettle();
+    expect(find.text(mountain.name), findsOneWidget);
+
+    await tester.tap(find.text('攀爬'));
+    await tester.pumpAndSettle();
+    expect(find.text('攀爬功能占位。'), findsOneWidget);
+    expect(find.text(mountain.name), findsNothing);
+
+    await tester.tap(find.text('首页'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('mountain-detail-sheet')), findsOneWidget);
+    expect(find.text(mountain.name), findsOneWidget);
   });
 }
