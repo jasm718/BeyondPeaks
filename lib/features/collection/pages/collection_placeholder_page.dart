@@ -7,9 +7,6 @@ class CollectionPlaceholderPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PlaceholderPage(
-      title: '收藏',
-      message: '收藏功能占位。',
-    );
+    return const PlaceholderPage(title: '收藏', message: '收藏功能占位。');
   }
 }

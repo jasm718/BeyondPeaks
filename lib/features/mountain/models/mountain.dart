@@ -11,7 +11,11 @@ class Mountain {
     required String routeSummary,
   }) {
     if (name.trim().isEmpty) {
-      throw ArgumentError.value(name, 'name', 'Mountain name must not be empty.');
+      throw ArgumentError.value(
+        name,
+        'name',
+        'Mountain name must not be empty.',
+      );
     }
     if (region.trim().isEmpty) {
       throw ArgumentError.value(

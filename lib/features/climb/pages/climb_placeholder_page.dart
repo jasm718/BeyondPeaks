@@ -7,9 +7,6 @@ class ClimbPlaceholderPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PlaceholderPage(
-      title: '攀爬',
-      message: '攀爬功能占位。',
-    );
+    return const PlaceholderPage(title: '攀爬', message: '攀爬功能占位。');
   }
 }

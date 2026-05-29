@@ -7,9 +7,6 @@ class SettingsPlaceholderPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PlaceholderPage(
-      title: '设置',
-      message: '设置功能占位。',
-    );
+    return const PlaceholderPage(title: '设置', message: '设置功能占位。');
   }
 }

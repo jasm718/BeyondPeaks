@@ -1,7 +1,6 @@
 import 'package:beyond_peaks/features/globe/models/globe_marker_layout.dart';
 import 'package:beyond_peaks/features/globe/utils/globe_marker_hit_test.dart';
 import 'package:beyond_peaks/features/mountain/models/mountain.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -53,14 +53,10 @@ class AppTheme {
       surfaceTint: AppColors.surfaceTint,
     );
 
-    final baseTheme = ThemeData(
-      useMaterial3: true,
-      colorScheme: colorScheme,
-    );
+    final baseTheme = ThemeData(useMaterial3: true, colorScheme: colorScheme);
 
     return baseTheme.copyWith(
       scaffoldBackgroundColor: AppColors.background,
-      fontFamily: 'Hanken Grotesk',
       textTheme: baseTheme.textTheme.apply(
         bodyColor: AppColors.onSurface,
         displayColor: AppColors.onSurface,

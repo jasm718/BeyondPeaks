@@ -8,14 +8,16 @@ void main() {
     final mountains = MountainData.fixedMountains;
 
     expect(mountains, hasLength(3));
-    expect(
-      mountains.map((mountain) => mountain.name),
-      ['珠穆朗玛峰', '乔戈里峰', '马特洪峰'],
-    );
-    expect(
-      mountains.map((mountain) => mountain.elevationMeters),
-      [8848, 8611, 4478],
-    );
+    expect(mountains.map((mountain) => mountain.name), [
+      '珠穆朗玛峰',
+      '乔戈里峰',
+      '马特洪峰',
+    ]);
+    expect(mountains.map((mountain) => mountain.elevationMeters), [
+      8848,
+      8611,
+      4478,
+    ]);
     expect(
       mountains.every(
         (mountain) =>
@@ -39,7 +41,10 @@ void main() {
     expect(east.x, closeTo(2, 1e-9));
     expect(east.y, closeTo(0, 1e-9));
     expect(east.z, closeTo(0, 1e-9));
-    expect(isFrontFacing(front, cameraPosition: const GlobePosition(0, 0, 3)), isTrue);
+    expect(
+      isFrontFacing(front, cameraPosition: const GlobePosition(0, 0, 3)),
+      isTrue,
+    );
     expect(
       isFrontFacing(
         geoToGlobePosition(latitude: 0, longitude: 180),

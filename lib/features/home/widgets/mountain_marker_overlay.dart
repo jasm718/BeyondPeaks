@@ -55,7 +55,7 @@ class _MountainMarkerLabel extends StatelessWidget {
           const SizedBox(height: 6),
           DecoratedBox(
             decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLowest.withOpacity(0.92),
+              color: AppColors.surfaceContainerLowest.withValues(alpha: 0.92),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Padding(

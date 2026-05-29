@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:three_js/three_js.dart' as three;
 
 import '../../../shared/theme/app_colors.dart';
@@ -41,9 +40,10 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   static const _markerLift = 0.035;
   static const _dragThreshold = 8.0;
 
-  late final three.ThreeJS _threeJs;
+  three.ThreeJS? _threeJs;
   three.PerspectiveCamera? _camera;
   three.OrbitControls? _controls;
+  three.GLTFData? _preloadedEarth;
   Size _viewportSize = Size.zero;
   Offset? _pointerStart;
   bool _didDrag = false;
@@ -55,28 +55,15 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   @override
   void initState() {
     super.initState();
-    _threeJs = three.ThreeJS(
-      onSetupComplete: () {
-        if (!mounted) {
-          return;
-        }
-        if (_failureMessage != null) {
-          return;
-        }
-        setState(() {
-          _isReady = true;
-          _markerLayouts = _projectMarkerLayouts();
-        });
-      },
-      windowResizeUpdate: _handleWindowResize,
-      setup: _setupScene,
-    );
+    _prepareGlobe();
   }
 
   @override
   void dispose() {
     _controls?.dispose();
-    _threeJs.dispose();
+    if (_threeJs?.mounted == true) {
+      _threeJs!.dispose();
+    }
     super.dispose();
   }
 
@@ -84,10 +71,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        _viewportSize = Size(
-          constraints.maxWidth,
-          constraints.maxHeight,
-        );
+        _viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
         final failureMessage = _failureMessage;
 
         return DecoratedBox(
@@ -101,37 +85,39 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
               children: [
                 Positioned.fill(
                   child: failureMessage == null
-                      ? Listener(
-                          behavior: HitTestBehavior.opaque,
-                          onPointerDown: (event) {
-                            _pointerStart = event.localPosition;
-                            _didDrag = false;
-                          },
-                          onPointerMove: (event) {
-                            final pointerStart = _pointerStart;
-                            if (pointerStart == null) {
-                              return;
-                            }
-                            if ((event.localPosition - pointerStart)
-                                    .distance >=
-                                _dragThreshold) {
-                              _didDrag = true;
-                              _stopAutoRotate();
-                            }
-                          },
-                          onPointerUp: (event) {
-                            if (!_didDrag) {
-                              _handleTap(event.localPosition);
-                            }
-                            _pointerStart = null;
-                            _didDrag = false;
-                          },
-                          onPointerCancel: (_) {
-                            _pointerStart = null;
-                            _didDrag = false;
-                          },
-                          child: _threeJs.build(),
-                        )
+                      ? _threeJs == null
+                          ? const SizedBox.expand()
+                          : Listener(
+                              behavior: HitTestBehavior.opaque,
+                              onPointerDown: (event) {
+                                _pointerStart = event.localPosition;
+                                _didDrag = false;
+                              },
+                              onPointerMove: (event) {
+                                final pointerStart = _pointerStart;
+                                if (pointerStart == null) {
+                                  return;
+                                }
+                                if ((event.localPosition - pointerStart)
+                                        .distance >=
+                                    _dragThreshold) {
+                                  _didDrag = true;
+                                  _stopAutoRotate();
+                                }
+                              },
+                              onPointerUp: (event) {
+                                if (!_didDrag) {
+                                  _handleTap(event.localPosition);
+                                }
+                                _pointerStart = null;
+                                _didDrag = false;
+                              },
+                              onPointerCancel: (_) {
+                                _pointerStart = null;
+                                _didDrag = false;
+                              },
+                              child: _threeJs!.build(),
+                            )
                       : const SizedBox.expand(),
                 ),
                 if (failureMessage != null)
@@ -173,48 +159,43 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
 
   Future<void> _setupScene() async {
     try {
-      final debugSceneSetupHook = EarthGlobeView.debugSceneSetupHook;
-      if (debugSceneSetupHook != null) {
-        await debugSceneSetupHook();
+      final threeJs = _threeJs;
+      if (threeJs == null) {
         return;
       }
 
-      final initialAspect = _threeJs.height > 0
-          ? _threeJs.width / _threeJs.height
+      final initialAspect = threeJs.height > 0
+          ? threeJs.width / threeJs.height
           : 1.0;
 
-      _camera = three.PerspectiveCamera(
-        45,
-        initialAspect,
-        0.1,
-        100,
-      );
+      _camera = three.PerspectiveCamera(45, initialAspect, 0.1, 100);
       _camera!.position.setValues(
         0,
         0,
         GlobeInteractionRules.baseCameraDistance,
       );
 
-      _threeJs.camera = _camera!;
-      _threeJs.scene = three.Scene();
-      _threeJs.scene.add(three.AmbientLight(0xffffff, 0.8));
+      threeJs.camera = _camera!;
+      threeJs.scene = three.Scene();
+      threeJs.scene.add(three.AmbientLight(0xffffff, 0.8));
       final keyLight = three.DirectionalLight(0xffffff, 1.4);
       keyLight.position.setValues(2.5, 2.0, 3.5);
-      _threeJs.scene.add(keyLight);
-      _threeJs.camera.lookAt(_threeJs.scene.position);
+      threeJs.scene.add(keyLight);
+      threeJs.camera.lookAt(threeJs.scene.position);
 
       final loader = three.GLTFLoader(
         flipY: true,
       ).setPath(widget.assetBasePath);
-      final earth = await _loadEarthModel(loader);
+      final earth = _preloadedEarth ?? await _loadEarthModel(loader);
+      _preloadedEarth = null;
       if (earth == null) {
         _showFailure(EarthGlobeView.earthModelFailureMessage);
         return;
       }
-      _threeJs.scene.add(earth.scene);
+      threeJs.scene.add(earth.scene);
 
       _replaceMountainMarkers();
-      _controls = three.OrbitControls(_threeJs.camera, _threeJs.globalKey)
+      _controls = three.OrbitControls(threeJs.camera, threeJs.globalKey)
         ..enablePan = false
         ..enableRotate = true
         ..enableZoom = true
@@ -225,7 +206,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
         ..autoRotate = GlobeInteractionRules.autoRotateOnEnter
         ..autoRotateSpeed = GlobeInteractionRules.autoRotateSpeed;
 
-      _threeJs.addAnimationEvent((_) {
+      threeJs.addAnimationEvent((_) {
         if (_failureMessage != null) {
           return;
         }
@@ -243,6 +224,48 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
     }
   }
 
+  Future<void> _prepareGlobe() async {
+    try {
+      final debugSceneSetupHook = EarthGlobeView.debugSceneSetupHook;
+      if (debugSceneSetupHook != null) {
+        await debugSceneSetupHook();
+      }
+
+      final loader = three.GLTFLoader(
+        flipY: true,
+      ).setPath(widget.assetBasePath);
+      _preloadedEarth = await _loadEarthModel(loader);
+      if (!mounted) {
+        return;
+      }
+      if (_preloadedEarth == null) {
+        _showFailure(EarthGlobeView.earthModelFailureMessage);
+        return;
+      }
+
+      setState(() {
+        _threeJs = three.ThreeJS(
+          onSetupComplete: () {
+            if (!mounted) {
+              return;
+            }
+            if (_failureMessage != null) {
+              return;
+            }
+            setState(() {
+              _isReady = true;
+              _markerLayouts = _projectMarkerLayouts();
+            });
+          },
+          windowResizeUpdate: _handleWindowResize,
+          setup: _setupScene,
+        );
+      });
+    } catch (_) {
+      _showFailure(EarthGlobeView.initializationFailureMessage);
+    }
+  }
+
   Future<three.GLTFData?> _loadEarthModel(three.GLTFLoader loader) async {
     try {
       return await loader.fromAsset(widget.assetName);
@@ -252,9 +275,12 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
   }
 
   void _replaceMountainMarkers() {
-    final markerMaterial = three.MeshBasicMaterial.fromMap({
-      'color': 0x324e58,
-    });
+    final threeJs = _threeJs;
+    if (threeJs == null) {
+      return;
+    }
+
+    final markerMaterial = three.MeshBasicMaterial.fromMap({'color': 0x324e58});
 
     for (final mountain in widget.mountains) {
       final globePosition = geoToGlobePosition(
@@ -272,7 +298,7 @@ class _EarthGlobeViewState extends State<EarthGlobeView> {
         globePosition.y,
         globePosition.z,
       );
-      _threeJs.scene.add(marker);
+      threeJs.scene.add(marker);
     }
   }
 

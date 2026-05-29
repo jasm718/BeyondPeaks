@@ -26,10 +26,7 @@ void main() {
     };
   }
 
-  Widget buildApp({
-    HomeGlobeBuilder? globeBuilder,
-    List<Override> overrides = const [],
-  }) {
+  Widget buildApp({HomeGlobeBuilder? globeBuilder, List overrides = const []}) {
     return ProviderScope(
       overrides: [
         ...overrides,
@@ -39,6 +36,15 @@ void main() {
       ],
       child: const BeyondPeaksApp(),
     );
+  }
+
+  Future<void> pumpUntilText(WidgetTester tester, String text) async {
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text(text).evaluate().isNotEmpty) {
+        return;
+      }
+    }
   }
 
   testWidgets('app starts on home with visible shell navigation', (
@@ -141,13 +147,14 @@ void main() {
 
     await tester.pumpWidget(
       buildApp(
-        globeBuilder: ({
-          required ValueChanged<Mountain> onMountainSelected,
-          required VoidCallback onBackgroundTap,
-        }) {
-          globeBuilt = true;
-          return const SizedBox(key: ValueKey('home-globe-fake'));
-        },
+        globeBuilder:
+            ({
+              required ValueChanged<Mountain> onMountainSelected,
+              required VoidCallback onBackgroundTap,
+            }) {
+              globeBuilt = true;
+              return const SizedBox(key: ValueKey('home-globe-fake'));
+            },
         overrides: [
           homeMountainsProvider.overrideWithValue(const <Mountain>[]),
         ],
@@ -156,7 +163,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('暂无可展示山峰'), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-globe-empty-state')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home-globe-empty-state')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('home-globe-fake')), findsNothing);
     expect(globeBuilt, isFalse);
   });
@@ -166,61 +176,61 @@ void main() {
   ) async {
     await tester.pumpWidget(
       buildApp(
-        globeBuilder: ({
-          required ValueChanged<Mountain> onMountainSelected,
-          required VoidCallback onBackgroundTap,
-        }) {
-          return EarthGlobeView(
-            mountains: MountainData.fixedMountains,
-            onMountainSelected: onMountainSelected,
-            onBackgroundTap: onBackgroundTap,
-            assetName: 'missing-earth.glb',
-          );
-        },
+        globeBuilder:
+            ({
+              required ValueChanged<Mountain> onMountainSelected,
+              required VoidCallback onBackgroundTap,
+            }) {
+              return EarthGlobeView(
+                mountains: MountainData.fixedMountains,
+                onMountainSelected: onMountainSelected,
+                onBackgroundTap: onBackgroundTap,
+                assetName: 'missing-earth.glb',
+              );
+            },
       ),
     );
-    await tester.pumpAndSettle();
+    await pumpUntilText(tester, '地球模型加载失败');
 
     expect(find.text('地球模型加载失败'), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
 
     await tester.tap(find.text('攀爬'));
-    await tester.pumpAndSettle();
+    await pumpUntilText(tester, '攀爬功能占位。');
 
     expect(find.text('攀爬功能占位。'), findsOneWidget);
   });
 
-  testWidgets('globe failure does not enter interaction state', (
-    tester,
-  ) async {
+  testWidgets('globe failure does not enter interaction state', (tester) async {
     var selected = false;
     var backgroundTapped = false;
 
     await tester.pumpWidget(
       buildApp(
-        globeBuilder: ({
-          required ValueChanged<Mountain> onMountainSelected,
-          required VoidCallback onBackgroundTap,
-        }) {
-          return EarthGlobeView(
-            mountains: MountainData.fixedMountains,
-            onMountainSelected: (_) {
-              selected = true;
+        globeBuilder:
+            ({
+              required ValueChanged<Mountain> onMountainSelected,
+              required VoidCallback onBackgroundTap,
+            }) {
+              return EarthGlobeView(
+                mountains: MountainData.fixedMountains,
+                onMountainSelected: (_) {
+                  selected = true;
+                },
+                onBackgroundTap: () {
+                  backgroundTapped = true;
+                },
+                assetName: 'missing-earth.glb',
+              );
             },
-            onBackgroundTap: () {
-              backgroundTapped = true;
-            },
-            assetName: 'missing-earth.glb',
-          );
-        },
       ),
     );
-    await tester.pumpAndSettle();
+    await pumpUntilText(tester, '地球模型加载失败');
 
     expect(find.text('地球模型加载失败'), findsOneWidget);
 
     await tester.tap(find.text('地球模型加载失败'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(selected, isFalse);
     expect(backgroundTapped, isFalse);
@@ -241,28 +251,29 @@ void main() {
 
     await tester.pumpWidget(
       buildApp(
-        globeBuilder: ({
-          required ValueChanged<Mountain> onMountainSelected,
-          required VoidCallback onBackgroundTap,
-        }) {
-          return EarthGlobeView(
-            mountains: MountainData.fixedMountains,
-            onMountainSelected: (_) {
-              selected = true;
+        globeBuilder:
+            ({
+              required ValueChanged<Mountain> onMountainSelected,
+              required VoidCallback onBackgroundTap,
+            }) {
+              return EarthGlobeView(
+                mountains: MountainData.fixedMountains,
+                onMountainSelected: (_) {
+                  selected = true;
+                },
+                onBackgroundTap: () {
+                  backgroundTapped = true;
+                },
+              );
             },
-            onBackgroundTap: () {
-              backgroundTapped = true;
-            },
-          );
-        },
       ),
     );
-    await tester.pumpAndSettle();
+    await pumpUntilText(tester, '3D 地球初始化失败');
 
     expect(find.text('3D 地球初始化失败'), findsOneWidget);
 
     await tester.tap(find.text('3D 地球初始化失败'));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(selected, isFalse);
     expect(backgroundTapped, isFalse);
